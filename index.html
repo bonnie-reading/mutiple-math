@@ -1,0 +1,1784 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>小黑跑酷：倍數大冒險 (1~10倍數 三級難度 100以內) | 數學3D互動學習</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+    
+    * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      background-color: #0f172a;
+    }
+
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+
+    /* Screen shake animation on collision mistake */
+    .shake {
+      animation: shake 0.35s cubic-bezier(.36,.07,.19,.97) both;
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translate3d(-2px, 0, 0); }
+      20%, 80% { transform: translate3d(4px, -2px, 0); }
+      30%, 50%, 70% { transform: translate3d(-5px, 2px, 0); }
+      40%, 60% { transform: translate3d(5px, -1px, 0); }
+    }
+
+    /* Floating feedback tags */
+    .feedback-float {
+      animation: floatUp 1.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+      pointer-events: none;
+    }
+
+    @keyframes floatUp {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, 25px) scale(0.75);
+      }
+      18% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1.05);
+      }
+      30% {
+        transform: translate(-50%, -5px) scale(1.0);
+      }
+      80% {
+        opacity: 1;
+        transform: translate(-50%, -35px) scale(1.0);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -55px) scale(0.85);
+      }
+    }
+
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+<body id="game-body" class="relative w-screen h-screen overflow-hidden text-slate-100 select-none">
+
+  <!-- 3D WebGL Canvas Layer -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Screen Flash Indicator (Green for correct, Red for wrong) -->
+  <div id="screen-flash" class="absolute inset-0 pointer-events-none z-10 transition-opacity duration-200 opacity-0"></div>
+
+  <!-- Floating Feedback Overlay Container -->
+  <div id="floating-container" class="absolute inset-x-0 top-1/3 flex flex-col items-center pointer-events-none z-30"></div>
+
+  <!-- TOP HEADS-UP DISPLAY (HUD) -->
+  <div class="absolute top-0 inset-x-0 p-3 sm:p-5 z-20 flex justify-between items-start pointer-events-none">
+    
+    <!-- Left HUD Stats: Target Multiple & Coins collected -->
+    <div class="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+      <div class="glass-panel px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl flex items-center gap-2.5 shadow-xl border-amber-500/30">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 font-black text-xl shadow-md">
+          <i class="fa-solid fa-coins"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5 text-[11px] font-bold text-amber-300 uppercase tracking-wide">
+            <span>挑戰：</span>
+            <span class="px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 font-black text-xs">
+              <span id="hud-target-num">4</span> 的倍數
+            </span>
+            <span id="hud-diff-badge" class="px-1.5 py-0.5 rounded text-[10px] font-black border bg-emerald-500/30 text-emerald-300 border-emerald-400/30">初級</span>
+          </div>
+          <div class="flex items-baseline gap-1 text-slate-200">
+            <span id="score-text" class="text-xl sm:text-2xl font-black text-amber-400">0</span>
+            <span class="text-slate-400 text-xs font-bold">/ <span id="target-text">10</span> 枚</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Streak & Mistakes -->
+      <div class="hidden md:flex items-center gap-2">
+        <div class="glass-panel px-3 py-2 rounded-2xl flex items-center gap-2 shadow text-xs font-bold">
+          <span class="text-slate-400">連對</span>
+          <span id="streak-text" class="text-amber-300 font-black text-sm">0</span>
+          <span class="text-amber-400">🔥</span>
+        </div>
+        <div class="glass-panel px-3 py-2 rounded-2xl flex items-center gap-2 shadow text-xs font-bold">
+          <span class="text-slate-400">吃錯</span>
+          <span id="mistake-text" class="text-rose-400 font-black text-sm">0</span>
+          <span class="text-rose-400">✖</span>
+        </div>
+        <div class="glass-panel px-3 py-2 rounded-2xl flex items-center gap-2 shadow text-xs font-bold">
+          <i class="fa-regular fa-clock text-cyan-300"></i>
+          <span id="timer-text" class="text-cyan-300 font-mono font-bold text-sm">00:00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Educational Rule Tip Banner -->
+    <div class="hidden lg:flex flex-col items-center glass-panel px-5 py-2.5 rounded-2xl border-cyan-500/30 max-w-md pointer-events-auto">
+      <div class="text-xs text-cyan-300 font-extrabold flex items-center gap-1.5">
+        <i class="fa-solid fa-lightbulb text-amber-300"></i>
+        <span><span id="hud-rule-multiple">4</span> 的倍數判斷訣竅</span>
+      </div>
+      <div id="hud-rule-desc" class="text-xs font-semibold text-slate-200 mt-0.5 text-center leading-snug">
+        末兩位數是 4 的倍數，或連續減半為偶數。
+      </div>
+    </div>
+
+    <!-- Right Controls: Quick Difficulty Switch, Quick Multi Switch, Sound & Pause -->
+    <div class="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+      
+      <!-- Quick Coins Target Dropdown -->
+      <div class="relative">
+        <button id="btn-quick-target" class="glass-panel hover:bg-slate-700/80 px-2.5 sm:px-3 py-2 rounded-2xl flex items-center gap-1 text-xs font-bold text-amber-300 transition active:scale-95 shadow">
+          <i class="fa-solid fa-coins text-amber-400"></i>
+          <span id="hud-quick-target-label">10枚</span>
+          <i class="fa-solid fa-chevron-down text-[10px]"></i>
+        </button>
+        <div id="quick-target-menu" class="hidden absolute right-0 mt-2 w-48 p-2.5 rounded-2xl glass-panel shadow-2xl z-50 flex flex-col gap-2 border-slate-700">
+          <div class="text-[11px] font-bold text-amber-300 flex justify-between items-center">
+            <span>目標金幣數:</span>
+            <span id="quick-target-val" class="text-amber-400 font-black">10</span>
+          </div>
+          <input id="quick-target-range" type="range" min="1" max="30" value="10" class="w-full accent-amber-400 cursor-pointer">
+          <div class="grid grid-cols-4 gap-1 text-[10px]">
+            <button data-quick-coins="5" class="py-1 rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 font-bold transition">5枚</button>
+            <button data-quick-coins="10" class="py-1 rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 font-bold transition">10枚</button>
+            <button data-quick-coins="15" class="py-1 rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 font-bold transition">15枚</button>
+            <button data-quick-coins="20" class="py-1 rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 font-bold transition">20枚</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Difficulty Dropdown -->
+      <div class="relative">
+        <button id="btn-quick-diff" class="glass-panel hover:bg-slate-700/80 px-2.5 sm:px-3 py-2 rounded-2xl flex items-center gap-1 text-xs font-bold text-emerald-300 transition active:scale-95 shadow">
+          <i class="fa-solid fa-gauge-high text-emerald-400"></i>
+          <span id="hud-quick-diff-label">初級</span>
+          <i class="fa-solid fa-chevron-down text-[10px]"></i>
+        </button>
+        <div id="quick-diff-menu" class="hidden absolute right-0 mt-2 w-36 p-1.5 rounded-2xl glass-panel shadow-2xl z-50 flex flex-col gap-1 border-slate-700">
+          <button data-diff="easy" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-left hover:bg-emerald-500/20 text-emerald-300 flex items-center justify-between">
+            <span>🌱 初級 (慢速)</span>
+          </button>
+          <button data-diff="medium" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-left hover:bg-amber-500/20 text-amber-300 flex items-center justify-between">
+            <span>⚡ 中級 (標準)</span>
+          </button>
+          <button data-diff="hard" class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-left hover:bg-rose-500/20 text-rose-300 flex items-center justify-between">
+            <span>🔥 高級 (極限)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Multiple Dropdown (1 to 10) -->
+      <div class="relative">
+        <button id="btn-quick-multi" class="glass-panel hover:bg-slate-700/80 px-2.5 sm:px-3 py-2 rounded-2xl flex items-center gap-1 text-xs font-bold text-amber-300 transition active:scale-95 shadow">
+          <i class="fa-solid fa-sliders text-cyan-300"></i>
+          <span>換倍數</span>
+          <i class="fa-solid fa-chevron-down text-[10px]"></i>
+        </button>
+        <div id="quick-multi-menu" class="hidden absolute right-0 mt-2 w-52 p-2 rounded-2xl glass-panel shadow-2xl z-50 grid grid-cols-5 gap-1.5 border-slate-700">
+          <!-- 1 to 10 buttons generated dynamically -->
+        </div>
+      </div>
+
+      <button id="btn-sound" class="glass-panel hover:bg-slate-700/80 w-10 h-10 rounded-2xl flex items-center justify-center text-cyan-300 text-base transition active:scale-95 shadow">
+        <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+      </button>
+      <button id="btn-pause" class="glass-panel hover:bg-slate-700/80 w-10 h-10 rounded-2xl flex items-center justify-center text-amber-300 text-base transition active:scale-95 shadow">
+        <i id="pause-icon" class="fa-solid fa-pause"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Track Navigation Hint (Desktop Keyboard) -->
+  <div class="absolute bottom-5 left-1/2 -translate-x-1/2 pointer-events-none hidden sm:flex items-center gap-3 text-xs font-bold text-slate-300/85 glass-panel px-4 py-1.5 rounded-full z-20">
+    <span>左移：<kbd class="px-2 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">←</kbd> 或 <kbd class="px-2 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">A</kbd></span>
+    <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+    <span>右移：<kbd class="px-2 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">→</kbd> 或 <kbd class="px-2 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">D</kbd></span>
+  </div>
+
+  <!-- Mobile On-Screen Touch Steering Controls -->
+  <div class="absolute bottom-4 left-0 right-0 px-5 flex justify-between items-center sm:hidden pointer-events-none z-20">
+    <button id="touch-left" class="pointer-events-auto w-16 h-16 rounded-2xl bg-indigo-600/80 active:bg-indigo-500 border-2 border-indigo-300/40 text-white text-2xl font-black flex items-center justify-center shadow-xl backdrop-blur-md active:scale-90 transition">
+      <i class="fa-solid fa-arrow-left"></i>
+    </button>
+    <div class="text-[11px] font-bold text-amber-300 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700">
+      滑動或點擊方向
+    </div>
+    <button id="touch-right" class="pointer-events-auto w-16 h-16 rounded-2xl bg-indigo-600/80 active:bg-indigo-500 border-2 border-indigo-300/40 text-white text-2xl font-black flex items-center justify-center shadow-xl backdrop-blur-md active:scale-90 transition">
+      <i class="fa-solid fa-arrow-right"></i>
+    </button>
+  </div>
+
+  <!-- LOBBY / SETTINGS MODAL -->
+  <div id="modal-start" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
+    <div class="glass-panel max-w-lg w-full rounded-3xl p-5 sm:p-6 text-center border-amber-400/30 shadow-2xl relative my-auto">
+      
+      <!-- Dog Mascot Icon -->
+      <div class="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-2 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 p-0.5 shadow-lg shadow-orange-500/25">
+        <div class="w-full h-full rounded-2xl bg-slate-900 flex items-center justify-center text-3xl sm:text-4xl">
+          🐶
+        </div>
+      </div>
+
+      <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-white mb-0.5">
+        小黑跑酷：<span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-rose-400">倍數大冒險</span>
+      </h1>
+      <p class="text-slate-300 text-xs font-medium mb-3">
+        設定難度與挑戰倍數 (1~10)，數字全在 100 以內！
+      </p>
+
+      <!-- 1. Difficulty Level Selector -->
+      <div class="mb-3 text-left">
+        <label class="text-xs font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+          <i class="fa-solid fa-layer-group"></i> 步驟 1：選擇難度階梯
+        </label>
+        <div class="grid grid-cols-3 gap-2" id="difficulty-picker">
+          <button data-diff="easy" class="diff-btn active p-2 rounded-2xl border-2 border-emerald-400 bg-emerald-500/20 text-emerald-300 text-left transition flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-black text-xs sm:text-sm">🌱 初級</span>
+              <span class="text-[10px] px-1 py-0.5 bg-emerald-950/80 rounded font-bold">慢速</span>
+            </div>
+            <div class="text-[10px] text-slate-300 leading-tight">每波1枚・大間距<br><span class="text-emerald-400 font-semibold">友善練習／少干擾</span></div>
+          </button>
+          <button data-diff="medium" class="diff-btn p-2 rounded-2xl border-2 border-slate-700 bg-slate-800/60 text-slate-400 hover:border-slate-500 text-left transition flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-black text-xs sm:text-sm">⚡ 中級</span>
+              <span class="text-[10px] px-1 py-0.5 bg-slate-900 rounded font-bold">標準</span>
+            </div>
+            <div class="text-[10px] text-slate-300 leading-tight">每波2枚・二選一<br><span class="text-amber-400 font-semibold">1正確 + 1干擾</span></div>
+          </button>
+          <button data-diff="hard" class="diff-btn p-2 rounded-2xl border-2 border-slate-700 bg-slate-800/60 text-slate-400 hover:border-slate-500 text-left transition flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-black text-xs sm:text-sm">🔥 高級</span>
+              <span class="text-[10px] px-1 py-0.5 bg-slate-900 rounded font-bold">極限</span>
+            </div>
+            <div class="text-[10px] text-slate-300 leading-tight">每波3道全滿・疾速<br><span class="text-rose-400 font-semibold">1正確 + 2迷惑項</span></div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Target Multiples Selector (1 ~ 10) -->
+      <div class="mb-3 text-left">
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-bullseye"></i> 步驟 2：選擇挑戰倍數 (1~10)
+          </label>
+          <span class="text-[11px] text-slate-400">目前：<strong id="modal-selected-tag" class="text-amber-400 font-bold">4 的倍數</strong></span>
+        </div>
+        <!-- 10 numbers laid out in responsive 5 columns x 2 rows -->
+        <div id="multiple-picker" class="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
+          <!-- 1 to 10 button pills injected dynamically -->
+        </div>
+      </div>
+
+      <!-- 3. Target Coins to Collect (1 ~ 30) -->
+      <div class="mb-3.5 text-left">
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-coins"></i> 步驟 3：設定要賺取的金幣 (1~30)
+          </label>
+          <div class="text-xs font-bold text-slate-300 flex items-center gap-1">
+            <span>目標：</span>
+            <span id="target-coins-display" class="text-amber-400 font-black text-base">10</span>
+            <span class="text-[11px] text-slate-400">枚金幣</span>
+          </div>
+        </div>
+        <div class="glass-panel p-2.5 rounded-2xl flex flex-col gap-2 border-slate-700/80">
+          <div class="flex items-center gap-3">
+            <button id="btn-dec-coins" type="button" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-90 text-amber-300 font-black flex items-center justify-center transition border border-slate-600">
+              <i class="fa-solid fa-minus"></i>
+            </button>
+            <input id="input-target-coins" type="range" min="1" max="30" value="10" class="flex-1 accent-amber-400 cursor-pointer h-2 bg-slate-700 rounded-lg">
+            <button id="btn-inc-coins" type="button" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-90 text-amber-300 font-black flex items-center justify-center transition border border-slate-600">
+              <i class="fa-solid fa-plus"></i>
+            </button>
+          </div>
+          <div class="flex items-center justify-between text-xs text-slate-400 pt-0.5">
+            <span class="text-[10px]">快速預設：</span>
+            <div class="flex gap-1.5">
+              <button type="button" data-preset-coins="5" class="coin-preset-btn px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-slate-300 font-bold transition">5枚</button>
+              <button type="button" data-preset-coins="10" class="coin-preset-btn px-2.5 py-0.5 rounded-lg bg-amber-500/30 text-amber-300 border border-amber-400 font-bold transition">10枚</button>
+              <button type="button" data-preset-coins="15" class="coin-preset-btn px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-slate-300 font-bold transition">15枚</button>
+              <button type="button" data-preset-coins="20" class="coin-preset-btn px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-slate-300 font-bold transition">20枚</button>
+              <button type="button" data-preset-coins="30" class="coin-preset-btn px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-slate-300 font-bold transition">30枚</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Educational Rule Box -->
+      <div class="bg-indigo-950/60 rounded-2xl p-3 text-left border border-indigo-500/30 text-xs mb-4 space-y-1">
+        <div class="flex items-center gap-1.5 font-black text-amber-300">
+          <i class="fa-solid fa-graduation-cap"></i>
+          <span><span id="rule-title-target">4</span> 的倍數判斷訣竅：</span>
+        </div>
+        <p id="rule-desc" class="text-slate-300 text-[11px] leading-relaxed">
+          末兩位數是 4 的倍數，或連續減半為偶數 (4, 8, 12, 16, 20, 24...)。
+        </p>
+      </div>
+
+      <!-- Start Button -->
+      <button id="btn-start-play" class="w-full py-3 sm:py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-black text-base shadow-xl shadow-orange-500/30 transform active:scale-95 transition">
+        <i class="fa-solid fa-paw mr-1.5"></i> 與小黑出發挑戰！
+      </button>
+
+      <div class="mt-2 text-[11px] text-slate-400">
+        電腦：方向鍵 ← → 或 A D 鍵 | 手機：滑動或點擊按鈕
+      </div>
+    </div>
+  </div>
+
+  <!-- VICTORY / RESULT MODAL -->
+  <div id="modal-result" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 text-center border-emerald-400/40 shadow-2xl relative overflow-hidden">
+      
+      <div id="result-badge" class="w-20 h-20 mx-auto mb-2 rounded-2xl bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-4xl shadow-lg">
+        🏆
+      </div>
+
+      <h2 id="result-title" class="text-2xl font-black text-white mb-0.5">闖關成功！</h2>
+      <p id="result-subtitle" class="text-slate-300 text-xs mb-3">順利收集滿目標金幣！</p>
+
+      <!-- Rating Stars -->
+      <div id="res-stars" class="text-2xl text-amber-400 mb-3 flex justify-center gap-1">
+        <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+      </div>
+
+      <!-- Stats Summary -->
+      <div class="grid grid-cols-4 gap-1.5 bg-slate-900/80 rounded-2xl p-3 border border-slate-700/80 mb-4 text-center">
+        <div>
+          <div class="text-[10px] text-slate-400">難度</div>
+          <div id="res-diff" class="text-sm font-black text-emerald-300 mt-0.5">初級</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400">挑戰倍數</div>
+          <div id="res-target" class="text-sm font-black text-amber-400 mt-0.5">4 倍數</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400">吃錯次數</div>
+          <div id="res-mistakes" class="text-sm font-black text-rose-400 mt-0.5">0</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400">花費時間</div>
+          <div id="res-time" class="text-sm font-black text-cyan-300 mt-0.5">00:24</div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col gap-2">
+        <button id="btn-replay" class="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-black text-sm shadow-lg shadow-emerald-500/25 active:scale-95 transition">
+          <i class="fa-solid fa-rotate-right mr-1.5"></i> 再挑戰一次此配置
+        </button>
+        <button id="btn-change-multi" class="w-full py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-slate-600 active:scale-95 transition">
+          <i class="fa-solid fa-gear mr-1.5"></i> 調整難度或更換倍數
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MAIN SCRIPT LOGIC -->
+  <script>
+    /**
+     * MULTIPLE RULES & CRITERIA REPOSITORY (1 ~ 10)
+     */
+    const MULTIPLES_DATA = {
+      1: {
+        name: "1 的倍數",
+        desc: "所有的正整數都是 1 的倍數！任何數字都能被 1 整除。",
+        examples: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10..."
+      },
+      2: {
+        name: "2 的倍數",
+        desc: "偶數就是 2 的倍數：個位數字是 0、2、4、6、8。",
+        examples: "2, 4, 6, 8, 10, 12, 14, 16, 18, 20..."
+      },
+      3: {
+        name: "3 的倍數",
+        desc: "把各個數位的數字相加，如果總和是 3 的倍數，原數字就是 3 的倍數！",
+        examples: "例：72 ➔ 7+2=9 (是3的倍數，故72也是)"
+      },
+      4: {
+        name: "4 的倍數",
+        desc: "末兩位數能被 4 整除，或者連續減半兩次仍為整數。",
+        examples: "4, 8, 12, 16, 20, 24, 28, 32, 36, 40..."
+      },
+      5: {
+        name: "5 的倍數",
+        desc: "非常容易辨認：個位數字一定是 0 或是 5！",
+        examples: "5, 10, 15, 20, 25, 30, 35, 40, 45, 50..."
+      },
+      6: {
+        name: "6 的倍數",
+        desc: "必須同時符合：① 是偶數 (2的倍數) 且 ② 各位數和為 3 的倍數！",
+        examples: "6, 12, 18, 24, 30, 36, 42, 48, 54, 60..."
+      },
+      7: {
+        name: "7 的倍數",
+        desc: "熟記 7 的九九乘法表，或除以 7 能剛好整除無餘數。",
+        examples: "7, 14, 21, 28, 35, 42, 49, 56, 63, 70..."
+      },
+      8: {
+        name: "8 的倍數",
+        desc: "能被 8 整除，或者連續除以 2 三次皆為整數。",
+        examples: "8, 16, 24, 32, 40, 48, 56, 64, 72, 80..."
+      },
+      9: {
+        name: "9 的倍數",
+        desc: "把各個數位的數字相加，如果總和是 9 的倍數，該數就是 9 的倍數！",
+        examples: "例：81 ➔ 8+1=9；99 ➔ 9+9=18 (9+9也是9的倍數)"
+      },
+      10: {
+        name: "10 的倍數",
+        desc: "最容易辨識的倍數：個位數字一定是 0！",
+        examples: "10, 20, 30, 40, 50, 60, 70, 80, 90, 100"
+      }
+    };
+
+    /**
+     * 3-TIER DIFFICULTY SPECIFICATIONS
+     */
+    const DIFFICULTY_SETTINGS = {
+      easy: {
+        id: 'easy',
+        name: '初級',
+        speed: 9.5,                 // 初級放慢至 9.5，溫和友善
+        spawnDist: 32,              // 間距拉大至 32，大幅增加反應與思考時間
+        badgeClass: 'bg-emerald-500/30 text-emerald-300 border-emerald-400/30',
+        maxRange: 50,               // 範圍 1~50 友善練習
+        legFreqMultiplier: 0.009,   // 腳步與跑步節奏同步放緩
+        desc: '緩慢溫和・單枚出現 (80% 正確倍數，20% 友善閃避練習)'
+      },
+      medium: {
+        id: 'medium',
+        name: '中級',
+        speed: 15.5,                // 中級適中速度 15.5
+        spawnDist: 24,              // 間距 24
+        badgeClass: 'bg-amber-500/30 text-amber-300 border-amber-400/30',
+        maxRange: 100,              // 範圍 1~100
+        legFreqMultiplier: 0.014,
+        desc: '標準競速・二選一 (1 正確 + 1 干擾項)'
+      },
+      hard: {
+        id: 'hard',
+        name: '高級',
+        speed: 22.5,                // 高級降至 22.5，刺激且有足夠反應時間
+        spawnDist: 18,              // 間距 18
+        badgeClass: 'bg-rose-500/30 text-rose-300 border-rose-400/30',
+        maxRange: 100,              // 範圍 1~100
+        legFreqMultiplier: 0.0185,
+        desc: '極速挑戰・三道全滿 (1 正確 + 2 迷惑型鄰近干擾項)'
+      }
+    };
+
+    /**
+     * SOUND SYNTHESIZER (Web Audio API)
+     */
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playLaneSwitch() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(340, now);
+        osc.frequency.exponentialRampToValueAtTime(620, now + 0.07);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.07);
+      }
+      playCorrect() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const notes = [587.33, 739.99, 880.00, 1174.66]; // D5, F#5, A5, D6
+        notes.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const start = this.ctx.currentTime + idx * 0.045;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.2, start);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.16);
+        });
+      }
+      playWrong() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(260, now);
+        osc.frequency.linearRampToValueAtTime(95, now + 0.32);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.32);
+      }
+      playVictory() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const fanfare = [
+          { f: 523.25, d: 0.12 },
+          { f: 659.25, d: 0.12 },
+          { f: 783.99, d: 0.12 },
+          { f: 1046.50, d: 0.45 }
+        ];
+        let offset = this.ctx.currentTime;
+        fanfare.forEach(item => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(item.f, offset);
+          gain.gain.setValueAtTime(0.25, offset);
+          gain.gain.exponentialRampToValueAtTime(0.001, offset + item.d);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(offset);
+          osc.stop(offset + item.d);
+          offset += item.d;
+        });
+      }
+    }
+
+    const sound = new SoundFX();
+
+    /**
+     * CONFIG & GAME STATE
+     */
+    const CONFIG = {
+      lanes: [-2.4, 0, 2.4],
+      coinRadius: 0.85
+    };
+
+    let gameState = {
+      isPlaying: false,
+      isPaused: false,
+      difficulty: 'easy', // 'easy' | 'medium' | 'hard'
+      targetMultiple: 4, // 1 ~ 10
+      targetScore: 10, // 1 ~ 30
+      score: 0,
+      mistakes: 0,
+      streak: 0,
+      startTime: 0,
+      timerInterval: null,
+      elapsedSeconds: 0,
+      currentLane: 1, // 0: Left, 1: Center, 2: Right
+      playerX: 0,
+      targetX: 0,
+      coins: [],
+      particles: [],
+      lastSpawnZ: -20
+    };
+
+    /**
+     * THREE.JS WORLD & OBJECTS
+     */
+    const canvas = document.getElementById('game-canvas');
+    let scene, camera, renderer;
+    let dogGroup, dogLimbs = {};
+    let trackPlates = [];
+    let sceneryBuildings = [];
+    let sceneryClouds = [];
+
+    // Helper: Dynamic texture on 3D Coins with high-contrast billboard
+    function createCoinTexture(number) {
+      const texCanvas = document.createElement('canvas');
+      texCanvas.width = 256;
+      texCanvas.height = 256;
+      const ctx = texCanvas.getContext('2d');
+
+      // Golden coin face radial gradient
+      const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 125);
+      grad.addColorStop(0, '#fffbeb');
+      grad.addColorStop(0.35, '#fbbf24');
+      grad.addColorStop(0.85, '#d97706');
+      grad.addColorStop(1, '#92400e');
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(128, 128, 120, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer rim
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = '#78350f';
+      ctx.stroke();
+
+      // Inner dashed pattern
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#fef3c7';
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.arc(128, 128, 96, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Number text
+      ctx.fillStyle = '#451a03';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const fontSize = number >= 100 ? 82 : (number >= 10 ? 98 : 115);
+      ctx.font = `900 ${fontSize}px "Fredoka", "Noto Sans TC", sans-serif`;
+      ctx.fillText(number.toString(), 128, 132);
+
+      const texture = new THREE.CanvasTexture(texCanvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    // Helper: Floating billboard badge on top of coins for far-distance visibility
+    function createBillboardSprite(number) {
+      const bCanvas = document.createElement('canvas');
+      bCanvas.width = 160;
+      bCanvas.height = 80;
+      const bCtx = bCanvas.getContext('2d');
+
+      // Rounded background pill
+      bCtx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      bCtx.roundRect(10, 10, 140, 60, 18);
+      bCtx.fill();
+      bCtx.lineWidth = 4;
+      bCtx.strokeStyle = '#f59e0b';
+      bCtx.stroke();
+
+      // Number
+      bCtx.fillStyle = '#ffffff';
+      bCtx.font = '900 42px "Fredoka", sans-serif';
+      bCtx.textAlign = 'center';
+      bCtx.textBaseline = 'middle';
+      bCtx.fillText(number.toString(), 80, 42);
+
+      const texture = new THREE.CanvasTexture(bCanvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(1.4, 0.7, 1);
+      sprite.position.set(0, 1.45, 0);
+      return sprite;
+    }
+
+    function initThree() {
+      // Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1532);
+      scene.fog = new THREE.FogExp2(0x1a1532, 0.015);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 400);
+      camera.position.set(0, 4.3, 7.8);
+      camera.lookAt(0, 1.2, -8);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffeedd, 0.85);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffb074, 1.35);
+      dirLight.position.set(15, 26, 12);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 1024;
+      dirLight.shadow.mapSize.height = 1024;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 70;
+      dirLight.shadow.camera.left = -14;
+      dirLight.shadow.camera.right = 14;
+      dirLight.shadow.camera.top = 16;
+      dirLight.shadow.camera.bottom = -12;
+      scene.add(dirLight);
+
+      const hemLight = new THREE.HemisphereLight(0xffa278, 0x1f1a3a, 0.45);
+      scene.add(hemLight);
+
+      buildTrack();
+      buildCharacterDog();
+      buildEnvironment();
+
+      window.addEventListener('resize', onWindowResize, false);
+    }
+
+    function buildTrack() {
+      const trackWidth = 8.6;
+      const segmentLen = 60;
+      const totalSegments = 6;
+
+      const trackMat = new THREE.MeshLambertMaterial({ color: 0x22223b });
+      const laneLineMat = new THREE.MeshBasicMaterial({ color: 0x818cf8, transparent: true, opacity: 0.4 });
+      const borderMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+
+      for (let i = 0; i < totalSegments; i++) {
+        const segGroup = new THREE.Group();
+        segGroup.position.z = -i * segmentLen;
+
+        // Floor
+        const floorGeo = new THREE.BoxGeometry(trackWidth, 0.5, segmentLen);
+        const floor = new THREE.Mesh(floorGeo, trackMat);
+        floor.position.y = -0.25;
+        floor.receiveShadow = true;
+        segGroup.add(floor);
+
+        // Lane divider stripes
+        [-1.2, 1.2].forEach(lx => {
+          const lineGeo = new THREE.BoxGeometry(0.12, 0.52, segmentLen);
+          const lineMesh = new THREE.Mesh(lineGeo, laneLineMat);
+          lineMesh.position.set(lx, -0.24, 0);
+          segGroup.add(lineMesh);
+        });
+
+        // Curbs
+        [-trackWidth / 2, trackWidth / 2].forEach(bx => {
+          const curbGeo = new THREE.BoxGeometry(0.35, 0.7, segmentLen);
+          const curb = new THREE.Mesh(curbGeo, borderMat);
+          curb.position.set(bx, -0.1, 0);
+          segGroup.add(curb);
+        });
+
+        scene.add(segGroup);
+        trackPlates.push(segGroup);
+      }
+    }
+
+    function buildCharacterDog() {
+      dogGroup = new THREE.Group();
+      dogGroup.position.set(0, 0, 0);
+
+      const blackFurMat = new THREE.MeshLambertMaterial({ color: 0x141416 });
+      const muzzleMat = new THREE.MeshLambertMaterial({ color: 0x242427 });
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const pupilMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+      const noseMat = new THREE.MeshLambertMaterial({ color: 0x050505 });
+      const collarMat = new THREE.MeshLambertMaterial({ color: 0xef4444 });
+      const bellMat = new THREE.MeshLambertMaterial({ color: 0xfbbf24 });
+      const earInnerMat = new THREE.MeshLambertMaterial({ color: 0xf472b6 });
+
+      // Torso
+      const bodyGeo = new THREE.BoxGeometry(0.9, 0.7, 1.4);
+      const body = new THREE.Mesh(bodyGeo, blackFurMat);
+      body.position.set(0, 0.75, 0);
+      body.castShadow = true;
+      dogGroup.add(body);
+
+      // Head
+      const headGeo = new THREE.BoxGeometry(0.75, 0.7, 0.75);
+      const head = new THREE.Mesh(headGeo, blackFurMat);
+      head.position.set(0, 1.25, -0.65);
+      head.castShadow = true;
+      dogGroup.add(head);
+
+      // Snout
+      const snoutGeo = new THREE.BoxGeometry(0.48, 0.35, 0.45);
+      const snout = new THREE.Mesh(snoutGeo, muzzleMat);
+      snout.position.set(0, 1.12, -1.1);
+      dogGroup.add(snout);
+
+      // Nose
+      const noseGeo = new THREE.BoxGeometry(0.18, 0.12, 0.1);
+      const nose = new THREE.Mesh(noseGeo, noseMat);
+      nose.position.set(0, 1.26, -1.33);
+      dogGroup.add(nose);
+
+      // Eyes
+      [-0.22, 0.22].forEach(ex => {
+        const eyeG = new THREE.BoxGeometry(0.14, 0.16, 0.05);
+        const eyeW = new THREE.Mesh(eyeG, eyeMat);
+        eyeW.position.set(ex, 1.35, -1.03);
+        dogGroup.add(eyeW);
+
+        const pupG = new THREE.BoxGeometry(0.08, 0.1, 0.04);
+        const pup = new THREE.Mesh(pupG, pupilMat);
+        pup.position.set(ex, 1.35, -1.06);
+        dogGroup.add(pup);
+      });
+
+      // Pointy Ears
+      [-0.32, 0.32].forEach((earX, idx) => {
+        const earGroup = new THREE.Group();
+        earGroup.position.set(earX, 1.62, -0.65);
+
+        const earGeo = new THREE.ConeGeometry(0.18, 0.42, 4);
+        const ear = new THREE.Mesh(earGeo, blackFurMat);
+        ear.rotation.y = Math.PI / 4;
+        ear.rotation.z = idx === 0 ? 0.25 : -0.25;
+        earGroup.add(ear);
+
+        const innerEarGeo = new THREE.BoxGeometry(0.1, 0.22, 0.02);
+        const innerEar = new THREE.Mesh(innerEarGeo, earInnerMat);
+        innerEar.position.set(0, 0, -0.1);
+        earGroup.add(innerEar);
+
+        dogGroup.add(earGroup);
+      });
+
+      // Red Collar & Gold Bell
+      const collarGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.14, 8);
+      const collar = new THREE.Mesh(collarGeo, collarMat);
+      collar.position.set(0, 0.98, -0.6);
+      collar.rotation.x = 0.3;
+      dogGroup.add(collar);
+
+      const bellGeo = new THREE.SphereGeometry(0.1, 8, 8);
+      const bell = new THREE.Mesh(bellGeo, bellMat);
+      bell.position.set(0, 0.88, -0.84);
+      dogGroup.add(bell);
+
+      // Animated Tail
+      const tailGroup = new THREE.Group();
+      tailGroup.position.set(0, 1.0, 0.7);
+      const tailGeo = new THREE.CylinderGeometry(0.08, 0.12, 0.65, 6);
+      tailGeo.translate(0, 0.3, 0);
+      const tailMesh = new THREE.Mesh(tailGeo, blackFurMat);
+      tailMesh.rotation.x = -0.7;
+      tailGroup.add(tailMesh);
+      dogGroup.add(tailGroup);
+      dogLimbs.tail = tailGroup;
+
+      // Legs
+      const legGeo = new THREE.BoxGeometry(0.22, 0.6, 0.24);
+      legGeo.translate(0, -0.3, 0);
+
+      const makeLeg = (x, z) => {
+        const lGroup = new THREE.Group();
+        lGroup.position.set(x, 0.55, z);
+        const legMesh = new THREE.Mesh(legGeo, blackFurMat);
+        legMesh.castShadow = true;
+        lGroup.add(legMesh);
+
+        const pawGeo = new THREE.BoxGeometry(0.24, 0.12, 0.28);
+        const paw = new THREE.Mesh(pawGeo, muzzleMat);
+        paw.position.set(0, -0.55, -0.04);
+        lGroup.add(paw);
+
+        dogGroup.add(lGroup);
+        return lGroup;
+      };
+
+      dogLimbs.legFL = makeLeg(-0.35, -0.45);
+      dogLimbs.legFR = makeLeg(0.35, -0.45);
+      dogLimbs.legBL = makeLeg(-0.35, 0.45);
+      dogLimbs.legBR = makeLeg(0.35, 0.45);
+
+      scene.add(dogGroup);
+    }
+
+    function buildEnvironment() {
+      const buildingColors = [0x17153a, 0x221a4c, 0x111e38, 0x2c1f4d, 0x0a0f1d];
+      const bGeo = new THREE.BoxGeometry(1, 1, 1);
+
+      for (let i = 0; i < 40; i++) {
+        const col = buildingColors[Math.floor(Math.random() * buildingColors.length)];
+        const mat = new THREE.MeshLambertMaterial({ color: col });
+        const mesh = new THREE.Mesh(bGeo, mat);
+
+        const side = (i % 2 === 0 ? 1 : -1);
+        const posX = side * (7.5 + Math.random() * 12);
+        const posZ = - (i * 8) - 10;
+        const scaleX = 3 + Math.random() * 4;
+        const scaleY = 10 + Math.random() * 25;
+        const scaleZ = 4 + Math.random() * 5;
+
+        mesh.scale.set(scaleX, scaleY, scaleZ);
+        mesh.position.set(posX, scaleY / 2 - 8, posZ);
+        scene.add(mesh);
+        sceneryBuildings.push(mesh);
+      }
+
+      // Twilight Sunset clouds
+      const cloudMat = new THREE.MeshLambertMaterial({ color: 0xf472b6, transparent: true, opacity: 0.65 });
+      for (let i = 0; i < 15; i++) {
+        const cGroup = new THREE.Group();
+        const numPuffs = 3 + Math.floor(Math.random() * 3);
+        for (let p = 0; p < numPuffs; p++) {
+          const puffGeo = new THREE.SphereGeometry(1.5 + Math.random() * 1.5, 6, 6);
+          const puff = new THREE.Mesh(puffGeo, cloudMat);
+          puff.position.set(p * 2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2);
+          cGroup.add(puff);
+        }
+        cGroup.position.set((Math.random() - 0.5) * 80, 18 + Math.random() * 15, - (i * 25));
+        scene.add(cGroup);
+        sceneryClouds.push(cGroup);
+      }
+    }
+
+    /**
+     * GENERATE COIN OBSTACLES ACCORDING TO DIFFICULTY
+     */
+    function spawnCoinWave(zPos) {
+      const diffConfig = DIFFICULTY_SETTINGS[gameState.difficulty];
+      const targetN = gameState.targetMultiple;
+      const maxRange = diffConfig.maxRange;
+
+      let laneConfigs = []; // { laneIdx, isMultiple, number }
+
+      if (gameState.difficulty === 'easy') {
+        // [初級] 每波僅出現 1 枚金幣。80% 為正確倍數，20% 為非倍數閃避訓練
+        const lane = Math.floor(Math.random() * 3);
+        const isCorrectCoin = (Math.random() < 0.8) || (targetN === 1);
+        let num;
+        if (isCorrectCoin) {
+          const maxFactor = Math.floor(maxRange / targetN);
+          const factor = Math.floor(Math.random() * maxFactor) + 1;
+          num = factor * targetN;
+        } else {
+          // Friendly distractor
+          num = Math.floor(Math.random() * (maxRange - 2)) + 2;
+          if (num % targetN === 0) num = (num + 1 <= maxRange) ? num + 1 : num - 1;
+        }
+        laneConfigs.push({ laneIdx: lane, isMultiple: (num % targetN === 0), number: num });
+
+      } else if (gameState.difficulty === 'medium') {
+        // [中級] 每波出現 2 道金幣 (1 正確 + 1 干擾項)
+        const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, 2);
+        // Correct lane
+        const maxFactor = Math.floor(maxRange / targetN);
+        const factor = Math.floor(Math.random() * maxFactor) + 1;
+        const correctNum = factor * targetN;
+        laneConfigs.push({ laneIdx: lanes[0], isMultiple: true, number: correctNum });
+
+        // Distractor lane
+        let distractor;
+        let attempts = 0;
+        do {
+          distractor = Math.floor(Math.random() * (maxRange - 1)) + 2;
+          attempts++;
+        } while (distractor % targetN === 0 && attempts < 40);
+        if (distractor % targetN === 0) distractor = (distractor + 1 <= maxRange) ? distractor + 1 : distractor - 1;
+        
+        laneConfigs.push({ laneIdx: lanes[1], isMultiple: false, number: distractor });
+
+      } else {
+        // [高級] 每波 3 道全滿！(1 正確倍數 + 2 迷惑型鄰近干擾項 4n±1, 4n±2)
+        const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
+        const maxFactor = Math.floor(maxRange / targetN);
+        const factor = Math.floor(Math.random() * maxFactor) + 1;
+        const correctNum = factor * targetN;
+
+        laneConfigs.push({ laneIdx: lanes[0], isMultiple: true, number: correctNum });
+
+        // Deceptive distractors closely neighboring the multiple
+        const offsets = [-2, -1, 1, 2, 3].sort(() => Math.random() - 0.5);
+        let usedNumbers = new Set([correctNum]);
+
+        for (let i = 1; i <= 2; i++) {
+          let distractor = 0;
+          for (let off of offsets) {
+            let candidate = correctNum + off;
+            if (candidate >= 1 && candidate <= 100 && candidate % targetN !== 0 && !usedNumbers.has(candidate)) {
+              distractor = candidate;
+              usedNumbers.add(distractor);
+              break;
+            }
+          }
+          if (distractor === 0) {
+            distractor = Math.floor(Math.random() * 98) + 2;
+            if (distractor % targetN === 0) distractor++;
+          }
+          laneConfigs.push({ laneIdx: lanes[i], isMultiple: false, number: distractor });
+        }
+      }
+
+      // Instantiation in 3D
+      laneConfigs.forEach(item => {
+        const coin = createCoin3D(item.number, item.isMultiple);
+        coin.position.set(CONFIG.lanes[item.laneIdx], 1.2, zPos);
+        coin.userData = {
+          lane: item.laneIdx,
+          number: item.number,
+          isMultiple: item.isMultiple,
+          collected: false
+        };
+
+        scene.add(coin);
+        gameState.coins.push(coin);
+      });
+    }
+
+    function createCoin3D(number, isMultiple) {
+      const group = new THREE.Group();
+
+      const cylGeo = new THREE.CylinderGeometry(CONFIG.coinRadius, CONFIG.coinRadius, 0.28, 24);
+      cylGeo.rotateX(Math.PI / 2);
+
+      const numTexture = createCoinTexture(number);
+
+      const sideMat = new THREE.MeshStandardMaterial({
+        color: 0xf59e0b,
+        metalness: 0.8,
+        roughness: 0.25
+      });
+
+      const faceMat = new THREE.MeshBasicMaterial({
+        map: numTexture
+      });
+
+      const mats = [sideMat, faceMat, faceMat];
+      const coinMesh = new THREE.Mesh(cylGeo, mats);
+      coinMesh.castShadow = true;
+      group.add(coinMesh);
+
+      // Glowing outer ring
+      const ringGeo = new THREE.RingGeometry(CONFIG.coinRadius * 1.05, CONFIG.coinRadius * 1.22, 24);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: isMultiple ? 0x38bdf8 : 0xf43f5e,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.5
+      });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.position.z = -0.01;
+      group.add(ringMesh);
+
+      // Add high-visibility 3D Billboard above coin
+      const billboard = createBillboardSprite(number);
+      group.add(billboard);
+
+      return group;
+    }
+
+    /**
+     * FLOATING EDUCATIONAL TEXT ON SCREEN
+     */
+    function triggerFloatingText(text, isSuccess, mathExplanation) {
+      const container = document.getElementById('floating-container');
+      const item = document.createElement('div');
+      item.className = 'feedback-float px-5 py-2.5 rounded-2xl font-black text-center shadow-2xl flex flex-col items-center gap-0.5 border ' +
+        (isSuccess 
+          ? 'bg-emerald-600/95 text-white border-emerald-300 shadow-emerald-500/40 text-base sm:text-lg'
+          : 'bg-rose-600/95 text-white border-rose-300 shadow-rose-500/50 text-sm sm:text-base');
+      
+      item.innerHTML = `<div>${text}</div>` + (mathExplanation ? `<div class="text-xs font-semibold text-amber-200 mt-0.5">${mathExplanation}</div>` : '');
+      
+      container.appendChild(item);
+      setTimeout(() => {
+        if (item.parentNode) item.parentNode.removeChild(item);
+      }, 1400);
+
+      // Screen border flash & screen shake for errors
+      const flash = document.getElementById('screen-flash');
+      flash.className = `absolute inset-0 pointer-events-none z-10 transition-opacity duration-200 ${isSuccess ? 'bg-emerald-500/20' : 'bg-rose-500/35'} opacity-100`;
+      
+      if (!isSuccess) {
+        document.getElementById('game-body').classList.add('shake');
+        setTimeout(() => {
+          document.getElementById('game-body').classList.remove('shake');
+        }, 360);
+      }
+
+      setTimeout(() => {
+        flash.classList.remove('opacity-100');
+        flash.classList.add('opacity-0');
+      }, 200);
+    }
+
+    /**
+     * PARTICLE EXPLOSION EFFECT
+     */
+    function spawnParticles(pos, isCorrect) {
+      const pCount = 18;
+      const pColor = isCorrect ? 0xfacc15 : 0xf43f5e;
+      const pGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+      const pMat = new THREE.MeshBasicMaterial({ color: pColor });
+
+      for (let i = 0; i < pCount; i++) {
+        const p = new THREE.Mesh(pGeo, pMat);
+        p.position.copy(pos);
+        const velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 8,
+          Math.random() * 6 + 2,
+          (Math.random() - 0.5) * 8
+        );
+        scene.add(p);
+        gameState.particles.push({ mesh: p, vel: velocity, life: 1.0 });
+      }
+    }
+
+    /**
+     * USER CONTROLS: LANE SWITCHING
+     */
+    function moveLeft() {
+      if (!gameState.isPlaying || gameState.isPaused) return;
+      if (gameState.currentLane > 0) {
+        gameState.currentLane--;
+        gameState.targetX = CONFIG.lanes[gameState.currentLane];
+        sound.playLaneSwitch();
+      }
+    }
+
+    function moveRight() {
+      if (!gameState.isPlaying || gameState.isPaused) return;
+      if (gameState.currentLane < 2) {
+        gameState.currentLane++;
+        gameState.targetX = CONFIG.lanes[gameState.currentLane];
+        sound.playLaneSwitch();
+      }
+    }
+
+    // Keyboard bindings
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        moveLeft();
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        moveRight();
+      } else if (e.key === ' ' || e.key === 'p' || e.key === 'P') {
+        togglePause();
+      }
+    });
+
+    // Touch Swipe handling on canvas
+    let touchStartX = 0;
+    let touchStartY = 0;
+    window.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      const diffX = e.changedTouches[0].clientX - touchStartX;
+      const diffY = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(diffX) > 35 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < 0) moveLeft();
+        else moveRight();
+      }
+    }, { passive: true });
+
+    document.getElementById('touch-left').addEventListener('click', moveLeft);
+    document.getElementById('touch-right').addEventListener('click', moveRight);
+
+    /**
+     * REUSABLE GAMEPLAY LOGIC (COLLECT COIN)
+     */
+    function handleCoinCollision(coin) {
+      coin.userData.collected = true;
+      const num = coin.userData.number;
+      const targetN = gameState.targetMultiple;
+      const isMultiple = (num % targetN === 0);
+
+      if (isMultiple) {
+        gameState.score++;
+        gameState.streak++;
+        sound.playCorrect();
+        spawnParticles(coin.position, true);
+
+        const quotient = num / targetN;
+        const msg = `🎉 答對了！+1 (${num})`;
+        const expl = `${num} ÷ ${targetN} = ${quotient} (整除，是 ${targetN} 的倍數 ✔)`;
+        triggerFloatingText(msg, true, expl);
+
+        updateHUD();
+
+        if (gameState.score >= gameState.targetScore) {
+          triggerVictory();
+        }
+      } else {
+        gameState.mistakes++;
+        gameState.streak = 0;
+        sound.playWrong();
+        spawnParticles(coin.position, false);
+
+        const quotient = Math.floor(num / targetN);
+        const remainder = num % targetN;
+        const msg = `⚠️ 吃錯了！${num} 不是 ${targetN} 的倍數！`;
+        const expl = `${num} ÷ ${targetN} = ${quotient} ... 餘數 ${remainder} ✖`;
+        triggerFloatingText(msg, false, expl);
+
+        updateHUD();
+      }
+
+      scene.remove(coin);
+    }
+
+    function formatTime(totalSec) {
+      const min = Math.floor(totalSec / 60).toString().padStart(2, '0');
+      const sec = (totalSec % 60).toString().padStart(2, '0');
+      return `${min}:${sec}`;
+    }
+
+    function startTimer() {
+      clearInterval(gameState.timerInterval);
+      gameState.elapsedSeconds = 0;
+      document.getElementById('timer-text').innerText = "00:00";
+      gameState.timerInterval = setInterval(() => {
+        if (gameState.isPlaying && !gameState.isPaused) {
+          gameState.elapsedSeconds++;
+          document.getElementById('timer-text').innerText = formatTime(gameState.elapsedSeconds);
+        }
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(gameState.timerInterval);
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-target-num').innerText = gameState.targetMultiple;
+      document.getElementById('score-text').innerText = gameState.score;
+      document.getElementById('target-text').innerText = gameState.targetScore;
+      document.getElementById('mistake-text').innerText = gameState.mistakes;
+      document.getElementById('streak-text').innerText = gameState.streak;
+
+      // Update Difficulty badge & Quick label
+      const diffCfg = DIFFICULTY_SETTINGS[gameState.difficulty];
+      const diffBadge = document.getElementById('hud-diff-badge');
+      diffBadge.innerText = diffCfg.name;
+      diffBadge.className = `px-1.5 py-0.5 rounded text-[10px] font-black border ${diffCfg.badgeClass}`;
+      document.getElementById('hud-quick-diff-label').innerText = diffCfg.name;
+
+      // Update Quick target coins label
+      const quickTargetLabel = document.getElementById('hud-quick-target-label');
+      if (quickTargetLabel) quickTargetLabel.innerText = `${gameState.targetScore}枚`;
+
+      // Update HUD Rule Hint
+      const ruleInfo = MULTIPLES_DATA[gameState.targetMultiple];
+      document.getElementById('hud-rule-multiple').innerText = gameState.targetMultiple;
+      document.getElementById('hud-rule-desc').innerText = ruleInfo.desc;
+    }
+
+    /**
+     * GAME START & RESTART
+     */
+    function startGame(newTargetMultiple = null, newDifficulty = null, newTargetScore = null) {
+      sound.init();
+      if (newTargetMultiple !== null) {
+        gameState.targetMultiple = newTargetMultiple;
+      }
+      if (newDifficulty !== null) {
+        gameState.difficulty = newDifficulty;
+      }
+      if (newTargetScore !== null) {
+        gameState.targetScore = newTargetScore;
+      }
+
+      gameState.isPlaying = true;
+      gameState.isPaused = false;
+      gameState.score = 0;
+      gameState.mistakes = 0;
+      gameState.streak = 0;
+      gameState.currentLane = 1;
+      gameState.playerX = CONFIG.lanes[1];
+      gameState.targetX = CONFIG.lanes[1];
+      gameState.lastSpawnZ = -22;
+
+      startTimer();
+
+      // Clear existing coins & particles
+      gameState.coins.forEach(c => scene.remove(c));
+      gameState.coins = [];
+      gameState.particles.forEach(p => scene.remove(p.mesh));
+      gameState.particles = [];
+
+      dogGroup.position.set(0, 0, 0);
+
+      // Pre-spawn coins based on difficulty distance
+      const spawnDist = DIFFICULTY_SETTINGS[gameState.difficulty].spawnDist;
+      for (let z = -25; z > -130; z -= spawnDist) {
+        spawnCoinWave(z);
+        gameState.lastSpawnZ = z;
+      }
+
+      updateHUD();
+      document.getElementById('modal-start').classList.add('hidden');
+      document.getElementById('modal-result').classList.add('hidden');
+      document.getElementById('modal-result').classList.remove('flex');
+      document.getElementById('quick-multi-menu').classList.add('hidden');
+      document.getElementById('quick-diff-menu').classList.add('hidden');
+      document.getElementById('quick-target-menu').classList.add('hidden');
+    }
+
+    function triggerVictory() {
+      gameState.isPlaying = false;
+      stopTimer();
+      sound.playVictory();
+
+      // Canvas Confetti Celebration
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 110,
+          spread: 75,
+          origin: { y: 0.6 }
+        });
+      }
+
+      const diffCfg = DIFFICULTY_SETTINGS[gameState.difficulty];
+      document.getElementById('res-diff').innerText = diffCfg.name;
+      document.getElementById('res-target').innerText = `${gameState.targetMultiple} 的倍數`;
+      document.getElementById('res-mistakes').innerText = gameState.mistakes;
+      document.getElementById('res-time').innerText = formatTime(gameState.elapsedSeconds);
+
+      const resultTitle = document.getElementById('result-title');
+      const resultSub = document.getElementById('result-subtitle');
+      const resultBadge = document.getElementById('result-badge');
+      const starsContainer = document.getElementById('res-stars');
+
+      let starHTML = '';
+      if (gameState.mistakes === 0) {
+        resultBadge.innerText = '🌟';
+        resultTitle.innerText = `完美通關！${gameState.targetMultiple} 的倍數大師！`;
+        resultSub.innerText = `小黑太崇拜你了！在 ${diffCfg.name} 難度下零失誤完美收集 ${gameState.targetScore} 枚金幣！`;
+        starHTML = '<i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>';
+      } else if (gameState.mistakes <= 2) {
+        resultBadge.innerText = '🏆';
+        resultTitle.innerText = `挑戰成功！反應極佳！`;
+        resultSub.innerText = `順利收集 ${gameState.targetScore} 枚金幣，除法觀念非常清晰！`;
+        starHTML = '<i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-regular fa-star"></i>';
+      } else {
+        resultBadge.innerText = '🐾';
+        resultTitle.innerText = `抵達終點！多加練習會更強！`;
+        resultSub.innerText = `記住 ${gameState.targetMultiple} 的倍數判斷訣竅，再跑一次試試看零失誤！`;
+        starHTML = '<i class="fa-solid fa-star"></i><i class="fa-regular fa-star"></i><i class="fa-regular fa-star"></i>';
+      }
+      starsContainer.innerHTML = starHTML;
+
+      const modal = document.getElementById('modal-result');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function togglePause() {
+      if (!gameState.isPlaying) return;
+      gameState.isPaused = !gameState.isPaused;
+      const pauseIcon = document.getElementById('pause-icon');
+      if (gameState.isPaused) {
+        pauseIcon.className = 'fa-solid fa-play';
+      } else {
+        pauseIcon.className = 'fa-solid fa-pause';
+      }
+    }
+
+    /**
+     * ANIMATION & PHYSICS LOOP
+     */
+    let clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      if (gameState.isPlaying && !gameState.isPaused) {
+        const currentSpeed = DIFFICULTY_SETTINGS[gameState.difficulty].speed;
+        const currentSpawnDist = DIFFICULTY_SETTINGS[gameState.difficulty].spawnDist;
+        const moveDist = currentSpeed * delta;
+
+        // Smoothly interpolate dog X to target lane
+        gameState.playerX += (gameState.targetX - gameState.playerX) * 14 * delta;
+        dogGroup.position.x = gameState.playerX;
+
+        // Tilting animation
+        const rollTilt = (gameState.targetX - gameState.playerX) * 0.25;
+        dogGroup.rotation.z = -rollTilt;
+        dogGroup.rotation.y = -rollTilt * 0.5;
+
+        // Galloping leg cycle dynamically tied to current difficulty speed
+        const currentDiffConfig = DIFFICULTY_SETTINGS[gameState.difficulty] || DIFFICULTY_SETTINGS.medium;
+        const runCycle = performance.now() * currentDiffConfig.legFreqMultiplier;
+        const legAmp = 0.65;
+        if (dogLimbs.legFL) {
+          dogLimbs.legFL.rotation.x = Math.sin(runCycle) * legAmp;
+          dogLimbs.legFR.rotation.x = -Math.sin(runCycle) * legAmp;
+          dogLimbs.legBL.rotation.x = -Math.sin(runCycle) * legAmp;
+          dogLimbs.legBR.rotation.x = Math.sin(runCycle) * legAmp;
+        }
+        if (dogLimbs.tail) {
+          dogLimbs.tail.rotation.y = Math.sin(runCycle * 1.8) * 0.5;
+        }
+
+        dogGroup.position.y = Math.abs(Math.sin(runCycle)) * 0.18;
+
+        // Move track plates
+        trackPlates.forEach(plate => {
+          plate.position.z += moveDist;
+          if (plate.position.z > 40) {
+            plate.position.z -= 60 * trackPlates.length;
+          }
+        });
+
+        // Background buildings parallax
+        sceneryBuildings.forEach(b => {
+          b.position.z += moveDist * 0.45;
+          if (b.position.z > 25) {
+            b.position.z -= 320;
+          }
+        });
+
+        // Sunset clouds parallax
+        sceneryClouds.forEach(c => {
+          c.position.z += moveDist * 0.15;
+          if (c.position.z > 30) {
+            c.position.z -= 350;
+          }
+        });
+
+        // Coins loop & collision checks
+        for (let i = gameState.coins.length - 1; i >= 0; i--) {
+          const coin = gameState.coins[i];
+          coin.position.z += moveDist;
+          coin.rotation.y += 2.0 * delta;
+
+          const dz = Math.abs(coin.position.z - dogGroup.position.z);
+          const dx = Math.abs(coin.position.x - dogGroup.position.x);
+
+          if (!coin.userData.collected && dz < 1.05 && dx < 0.95) {
+            handleCoinCollision(coin);
+            gameState.coins.splice(i, 1);
+            continue;
+          }
+
+          if (coin.position.z > 12) {
+            scene.remove(coin);
+            gameState.coins.splice(i, 1);
+          }
+        }
+
+        // Spawn new coins continuously ahead
+        gameState.lastSpawnZ += moveDist;
+        if (gameState.lastSpawnZ > -100) {
+          const nextZ = gameState.lastSpawnZ - currentSpawnDist;
+          spawnCoinWave(nextZ);
+          gameState.lastSpawnZ = nextZ;
+        }
+
+        camera.position.x += (dogGroup.position.x * 0.35 - camera.position.x) * 5 * delta;
+      }
+
+      // Explosion particles update
+      for (let i = gameState.particles.length - 1; i >= 0; i--) {
+        const p = gameState.particles[i];
+        p.life -= delta * 1.8;
+        p.vel.y -= 15 * delta;
+        p.mesh.position.addScaledVector(p.vel, delta);
+        p.mesh.scale.setScalar(Math.max(0.01, p.life));
+
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          gameState.particles.splice(i, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    /**
+     * INITIALIZE UI SELECTORS (DIFFICULTIES & 1 ~ 10 MULTIPLES)
+     */
+    function initUI() {
+      // 1. Difficulty Buttons binding
+      document.querySelectorAll('#difficulty-picker .diff-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const diff = btn.getAttribute('data-diff');
+          setDifficulty(diff);
+        });
+      });
+
+      // Quick difficulty menu buttons
+      document.querySelectorAll('#quick-diff-menu button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const diff = btn.getAttribute('data-diff');
+          setDifficulty(diff);
+          startGame(gameState.targetMultiple, diff, gameState.targetScore);
+        });
+      });
+
+      // Target coins controls setup (1 ~ 30)
+      const inputCoins = document.getElementById('input-target-coins');
+      const quickCoinsRange = document.getElementById('quick-target-range');
+      const quickCoinsVal = document.getElementById('quick-target-val');
+
+      if (inputCoins) {
+        inputCoins.addEventListener('input', (e) => {
+          const val = parseInt(e.target.value, 10);
+          setTargetScore(val);
+        });
+      }
+
+      const decBtn = document.getElementById('btn-dec-coins');
+      if (decBtn) {
+        decBtn.addEventListener('click', () => {
+          if (gameState.targetScore > 1) {
+            setTargetScore(gameState.targetScore - 1);
+          }
+        });
+      }
+
+      const incBtn = document.getElementById('btn-inc-coins');
+      if (incBtn) {
+        incBtn.addEventListener('click', () => {
+          if (gameState.targetScore < 30) {
+            setTargetScore(gameState.targetScore + 1);
+          }
+        });
+      }
+
+      document.querySelectorAll('.coin-preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const val = parseInt(btn.getAttribute('data-preset-coins'), 10);
+          setTargetScore(val);
+        });
+      });
+
+      // In-game quick menu coins bindings
+      if (quickCoinsRange) {
+        quickCoinsRange.addEventListener('input', (e) => {
+          const val = parseInt(e.target.value, 10);
+          setTargetScore(val);
+          if (quickCoinsVal) quickCoinsVal.innerText = val;
+          startGame(gameState.targetMultiple, gameState.difficulty, val);
+        });
+      }
+
+      document.querySelectorAll('#quick-target-menu [data-quick-coins]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = parseInt(btn.getAttribute('data-quick-coins'), 10);
+          setTargetScore(val);
+          startGame(gameState.targetMultiple, gameState.difficulty, val);
+        });
+      });
+
+      // 2. Multiple picker setup (1 ~ 10)
+      const picker = document.getElementById('multiple-picker');
+      const quickMenu = document.getElementById('quick-multi-menu');
+      picker.innerHTML = '';
+      quickMenu.innerHTML = '';
+
+      for (let n = 1; n <= 10; n++) {
+        // Start screen 1~10 buttons
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-target', n);
+        btn.className = `multi-btn py-2 px-1 rounded-2xl border-2 font-black text-sm transition flex flex-col items-center justify-center ${
+          n === gameState.targetMultiple
+            ? 'border-amber-400 bg-amber-500/25 text-amber-300 shadow-md shadow-amber-500/20'
+            : 'border-slate-700 bg-slate-800/60 text-slate-400 hover:border-slate-500'
+        }`;
+        btn.innerHTML = `<span class="text-base">${n}</span><span class="text-[9px] font-normal">倍數</span>`;
+        btn.addEventListener('click', () => {
+          selectTargetMultiple(n);
+        });
+        picker.appendChild(btn);
+
+        // In-game Quick Dropdown buttons (1 to 10)
+        const quickBtn = document.createElement('button');
+        quickBtn.className = 'py-1.5 rounded-xl text-xs font-black bg-slate-800 hover:bg-amber-500 hover:text-slate-950 transition';
+        quickBtn.innerText = `${n}倍`;
+        quickBtn.addEventListener('click', () => {
+          selectTargetMultiple(n);
+          startGame(n, gameState.difficulty, gameState.targetScore);
+        });
+        quickMenu.appendChild(quickBtn);
+      }
+
+      updateRuleDisplay(gameState.targetMultiple);
+    }
+
+    function setDifficulty(diff) {
+      gameState.difficulty = diff;
+
+      // Update button highlights in start modal
+      document.querySelectorAll('#difficulty-picker .diff-btn').forEach(b => {
+        const d = b.getAttribute('data-diff');
+        if (d === diff) {
+          b.classList.add('border-emerald-400', 'bg-emerald-500/20', 'text-emerald-300');
+          b.classList.remove('border-slate-700', 'bg-slate-800/60', 'text-slate-400');
+        } else {
+          b.classList.remove('border-emerald-400', 'bg-emerald-500/20', 'text-emerald-300');
+          b.classList.add('border-slate-700', 'bg-slate-800/60', 'text-slate-400');
+        }
+      });
+
+      updateHUD();
+    }
+
+    function selectTargetMultiple(n) {
+      gameState.targetMultiple = n;
+
+      document.querySelectorAll('.multi-btn').forEach(btn => {
+        const val = parseInt(btn.getAttribute('data-target'));
+        if (val === n) {
+          btn.className = 'multi-btn py-2 px-1 rounded-2xl border-2 font-black text-sm transition flex flex-col items-center justify-center border-amber-400 bg-amber-500/25 text-amber-300 shadow-md shadow-amber-500/20';
+        } else {
+          btn.className = 'multi-btn py-2 px-1 rounded-2xl border-2 font-black text-sm transition flex flex-col items-center justify-center border-slate-700 bg-slate-800/60 text-slate-400 hover:border-slate-500';
+        }
+      });
+
+      document.getElementById('modal-selected-tag').innerText = `${n} 的倍數`;
+      updateRuleDisplay(n);
+    }
+
+    function setTargetScore(val) {
+      const clamped = Math.max(1, Math.min(30, val));
+      gameState.targetScore = clamped;
+
+      // Update lobby UI
+      const inputEl = document.getElementById('input-target-coins');
+      if (inputEl) inputEl.value = clamped;
+      const displayEl = document.getElementById('target-coins-display');
+      if (displayEl) displayEl.innerText = clamped;
+
+      // Update preset buttons styling
+      document.querySelectorAll('.coin-preset-btn').forEach(btn => {
+        const pVal = parseInt(btn.getAttribute('data-preset-coins'), 10);
+        if (pVal === clamped) {
+          btn.className = 'coin-preset-btn px-2.5 py-0.5 rounded-lg bg-amber-500/30 text-amber-300 border border-amber-400 font-bold transition';
+        } else {
+          btn.className = 'coin-preset-btn px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-slate-300 font-bold transition';
+        }
+      });
+
+      // Update in-game quick menu slider & labels
+      const quickRange = document.getElementById('quick-target-range');
+      if (quickRange) quickRange.value = clamped;
+      const quickVal = document.getElementById('quick-target-val');
+      if (quickVal) quickVal.innerText = clamped;
+      const quickLabel = document.getElementById('hud-quick-target-label');
+      if (quickLabel) quickLabel.innerText = `${clamped}枚`;
+
+      updateHUD();
+    }
+
+    function updateRuleDisplay(n) {
+      const data = MULTIPLES_DATA[n];
+      if (!data) return;
+      document.getElementById('rule-title-target').innerText = n;
+      document.getElementById('rule-desc').innerText = `${data.desc} (${data.examples})`;
+    }
+
+    // Toggle Quick Menus
+    document.getElementById('btn-quick-target').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('quick-diff-menu').classList.add('hidden');
+      document.getElementById('quick-multi-menu').classList.add('hidden');
+      document.getElementById('quick-target-menu').classList.toggle('hidden');
+    });
+
+    document.getElementById('btn-quick-multi').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('quick-diff-menu').classList.add('hidden');
+      document.getElementById('quick-target-menu').classList.add('hidden');
+      document.getElementById('quick-multi-menu').classList.toggle('hidden');
+    });
+
+    document.getElementById('btn-quick-diff').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('quick-multi-menu').classList.add('hidden');
+      document.getElementById('quick-target-menu').classList.add('hidden');
+      document.getElementById('quick-diff-menu').classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      document.getElementById('quick-multi-menu').classList.add('hidden');
+      document.getElementById('quick-diff-menu').classList.add('hidden');
+      document.getElementById('quick-target-menu').classList.add('hidden');
+    });
+
+    // Start / Replay Buttons
+    document.getElementById('btn-start-play').addEventListener('click', () => {
+      startGame(gameState.targetMultiple, gameState.difficulty, gameState.targetScore);
+    });
+
+    document.getElementById('btn-replay').addEventListener('click', () => {
+      startGame(gameState.targetMultiple, gameState.difficulty, gameState.targetScore);
+    });
+
+    document.getElementById('btn-change-multi').addEventListener('click', () => {
+      stopTimer();
+      document.getElementById('modal-result').classList.add('hidden');
+      document.getElementById('modal-result').classList.remove('flex');
+      document.getElementById('modal-start').classList.remove('hidden');
+      gameState.isPlaying = false;
+    });
+
+    // Pause button
+    document.getElementById('btn-pause').addEventListener('click', togglePause);
+
+    // Sound toggle
+    document.getElementById('btn-sound').addEventListener('click', () => {
+      sound.muted = !sound.muted;
+      const icon = document.getElementById('sound-icon');
+      if (sound.muted) {
+        icon.className = 'fa-solid fa-volume-xmark text-slate-400';
+      } else {
+        icon.className = 'fa-solid fa-volume-high text-cyan-300';
+        sound.playLaneSwitch();
+      }
+    });
+
+    // Launch Game on load
+    window.onload = function () {
+      initUI();
+      initThree();
+      animate();
+    };
+  </script>
+</body>
+</html>
